@@ -15,53 +15,70 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 
 import Browser
-import Html exposing (Html, button, div, h1, text)
+import Html exposing (Html, button, div, h1, option, select, text)
 import Html.Attributes exposing (style)
 import Html.Events exposing (onClick)
+--import Monocle.Lens as Lens exposing (Lens)
 import Svg exposing (Svg, svg)
 import Svg.Attributes as Svg
 
-type alias Model = Int
+type alias Model =
+    { program : Expression
+    }
 
 main =
-  Browser.sandbox { init = 0, update = update, view = view }
+    Browser.sandbox
+        { init = Model christmasTree
+        , update = update
+        , view = view
+        }
 
-type Msg = Increment | Decrement
+type Msg = ChangeProgram Expression
 
 type alias Vec2 = { x : Float, y : Float }
 
 -- TODO: add more shapes
 type Shape = Triangle Vec2 Vec2 Vec2
 
-type Color = Green
+type Color = Green | Red
+
+allColors = [ Green, Red ]
 
 colorString : Color -> String
 colorString color =
     case color of
         Green ->
             "green"
+        Red ->
+            "red"
+
+-- stringColor : String -> Color
+-- stringColor 
 
 -- TODO: maybe add interactivity
-type alias ChristmasProgram = List (Shape, Color)
+type Expression = Combine (List Expression) | Draw Shape Color
 
-christmasTree : ChristmasProgram
-christmasTree =
-    [ (Triangle { x = 10, y = 150 } { x = 50, y = 110 } { x = 90, y = 150 }, Green)
+-- Default program to show at start. Should draw a christmas tree.
+christmasTree : Expression
+christmasTree = Combine
+    [ Draw
+          (Triangle { x = 10, y = 150 } { x = 50, y = 110 } { x = 90, y = 150 })
+          Green
     ]
 
 shapeToSvg : (Shape, Color) -> Svg msg
 shapeToSvg (shape, color) =
-    case shape of
-        Triangle v1 v2 v3 ->
-            Svg.polygon
-                [ Svg.fill (colorString color)
-                , Svg.points <|
-                    String.join " " <|
-                        List.map (\{x, y} ->
-                                      String.fromFloat x ++ "," ++ String.fromFloat y)
-                            [v1, v2, v3]
-                ]
-                []
+    let pointString {x, y} = String.fromFloat x ++ "," ++ String.fromFloat y
+    in case shape of
+           Triangle v1 v2 v3 ->
+               Svg.polygon
+                   [ Svg.fill (colorString color)
+                   , [v1, v2, v3]
+                       |> List.map pointString
+                       |> String.join " "
+                       |> Svg.points
+                   ]
+                   []
 
 -- Render a list of shapes into svg
 drawShapes : List (Shape, Color) -> Html msg
@@ -70,13 +87,40 @@ drawShapes shapes =
         [ Svg.width "100%", Svg.height "100%", Svg.viewBox "0 0 100 200" ]
         (List.map shapeToSvg shapes)
 
+update : Msg -> Model -> Model
 update msg model =
     case msg of
-        Increment ->
-            model + 1
+        ChangeProgram newProgram ->
+            { model | program = newProgram }
 
-        Decrement ->
-            model - 1
+-- Evaluate a program to
+evalProgram : Expression -> List (Shape, Color)
+evalProgram expression =
+    case expression of
+        Draw shape color ->
+            [(shape, color)]
+        Combine expressions ->
+            List.concatMap evalProgram expressions
+
+makeOption : Color -> Html Msg
+makeOption c = option [] [ text (colorString c) ]
+
+viewProgramEditor : Expression -> Html Msg
+viewProgramEditor expr =
+    case expr of
+        Draw shape color ->
+            div
+                []
+                [ text "Draw"
+                , select [] [ option [] [ text "Triangle" ] ]
+                , select [] (List.map makeOption allColors)
+                ]
+        Combine expressions ->
+            div [] <| List.concat
+                [ [ text "Combine" ]
+                , List.map viewProgramEditor expressions
+                , [ button [] [ text "+" ] ]
+                ]
 
 codeView : Model -> Html Msg
 codeView model =
@@ -84,9 +128,7 @@ codeView model =
         [ style "width" "50%"
         , style "float" "left"
         ]
-        [ button [ onClick Decrement ] [ text "-" ]
-        , div [] [ text (String.fromInt model) ]
-        , button [ onClick Increment ] [ text "+" ]
+        [ viewProgramEditor model.program
         ]
 
 drawView model =
@@ -94,7 +136,13 @@ drawView model =
         [ style "width" "50%"
         , style "float" "left"
         ]
-        [ drawShapes christmasTree
+        [ drawShapes (evalProgram christmasTree)
         ]
 
-view model = div [] [ h1 [] [ text "God jul" ], codeView model, drawView model ]
+view model =
+    div
+        []
+        [ h1 [] [ text "God jul" ]
+        , codeView model
+        , drawView model
+        ]
