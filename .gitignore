@@ -1,14 +1,4 @@
-pom.xml
-pom.xml.asc
-*.jar
-*.class
-/lib/
-/classes/
-/target/
-/checkouts/
-.lein-deps-sum
-.lein-repl-history
-.lein-plugins/
-.lein-failures
-.nrepl-port
-.cpcache/
+# elm-package generated files
+elm-stuff
+# elm-repl generated files
+repl-temp-*
