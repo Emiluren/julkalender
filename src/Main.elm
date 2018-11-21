@@ -15,25 +15,90 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 
 import Browser
-import Html exposing (Html, button, div, h1, option, select, text)
-import Html.Attributes exposing (style)
-import Html.Events exposing (onClick)
---import Monocle.Lens as Lens exposing (Lens)
+import Html exposing (Html, a, button, div, h1, option, select, text, textarea)
+import Html.Attributes exposing (style, href)
+import Html.Events exposing (onClick, onInput)
+import Set
 import Svg exposing (Svg, svg)
 import Svg.Attributes as Svg
+import Parser exposing (Parser, (|.), (|=), spaces)
+
+-- symbol : Parser Char
+-- symbol = Parser.oneOf (String.toList "!#$%&|*+-/:<=>?@^_~")
+
+legalSymbolsInIdentifiers : List Char
+legalSymbolsInIdentifiers = String.toList "!#$%&|*+-/:<=>?@^_~"
+
+type LispVal
+    = Atom String
+    | List (List LispVal)
+    | DottedList (List LispVal) LispVal
+    | Number Int
+    | String String
+    | Bool Bool
+
+parseAtom : Parser LispVal
+parseAtom =
+    let atomLispVal : String -> LispVal
+        atomLispVal atom =
+            case atom of
+                "#t" -> Bool True
+                "#f" -> Bool False
+                _ -> Atom atom
+    in Parser.map atomLispVal <| Parser.variable
+        { start = \c -> Char.isAlpha c ||
+              List.member c legalSymbolsInIdentifiers
+        , inner = \c -> Char.isAlphaNum c ||
+              List.member c legalSymbolsInIdentifiers
+        , reserved = Set.empty
+        }
+
+parseList : Parser LispVal
+parseList =
+    Parser.loop [] listHelp
+
+listHelp : List LispVal -> Parser (Parser.Step (List LispVal) LispVal)
+listHelp revValues =
+    Parser.oneOf
+        [ Parser.succeed (\expr -> Parser.Loop (expr :: revValues))
+            |. spaces
+            |= parseExpr
+            |. spaces
+        , Parser.succeed ()
+            |> Parser.map (\_ -> Parser.Done (List (List.reverse revValues)))
+        ]
+
+parseExpr : Parser LispVal
+parseExpr =
+    Parser.oneOf
+        [ parseAtom
+        , parseList
+        ]
+
+readExpr : String -> String
+readExpr input =
+    case Parser.run parseExpr input of
+        Err e -> "Error"
+        Ok _ -> "Found value"
 
 type alias Model =
     { program : Expression
+    , code : String
+    , evalResult : String
     }
 
 main =
     Browser.sandbox
-        { init = Model christmasTree
+        { init =
+              { program = christmasTree
+              , code = "(triangle (10 . 150) (50 . 110) (90 . 150))\n(triangle (20 . 120) (50 . 90) (80 . 120))"
+              , evalResult = ""
+              }
         , update = update
         , view = view
         }
 
-type Msg = ChangeProgram Expression
+type Msg = ChangeProgram Expression | RunCode | NewCode String
 
 type alias Vec2 = { x : Float, y : Float }
 
@@ -64,6 +129,9 @@ christmasTree = Combine
     [ Draw
           (Triangle { x = 10, y = 150 } { x = 50, y = 110 } { x = 90, y = 150 })
           Green
+    , Draw
+          (Triangle { x = 20, y = 120 } { x = 50, y = 90 } { x = 80, y = 120 })
+          Green
     ]
 
 shapeToSvg : (Shape, Color) -> Svg msg
@@ -92,6 +160,10 @@ update msg model =
     case msg of
         ChangeProgram newProgram ->
             { model | program = newProgram }
+        NewCode code ->
+            { model | code = code }
+        RunCode ->
+            { model | evalResult = readExpr model.code }
 
 -- Evaluate a program to
 evalProgram : Expression -> List (Shape, Color)
@@ -126,23 +198,44 @@ codeView : Model -> Html Msg
 codeView model =
     div
         [ style "width" "50%"
-        , style "float" "left"
+        --, style "height" "200px"
+        --, style "float" "left"
+        , style "flex" "1"
         ]
-        [ viewProgramEditor model.program
+        [ button [ onClick RunCode ] [ text "Kör" ]
+        , textarea
+              [ style "width" "100%"
+              , style "height" "100%"
+              , style "resize" "none"
+              , onInput NewCode
+              ]
+              [ text model.code ]
         ]
 
+drawView : Model -> Html Msg
 drawView model =
     div 
         [ style "width" "50%"
-        , style "float" "left"
+        --, style "float" "left"
+        , style "flex" "1"
         ]
         [ drawShapes (evalProgram christmasTree)
         ]
 
+view : Model -> Html Msg
 view model =
     div
         []
-        [ h1 [] [ text "God jul" ]
-        , codeView model
-        , drawView model
+        [ h1 [] [ text "God jul önskar LiTHe kod!" ]
+        , text "Delta gärna i vår "
+        , a [ href "http://lithekod.se/advent-of-code/" ] [ text "Advent of code-tävling" ]
+        , text model.evalResult
+        , div
+              [ style "width" "100%"
+              , style "height" "100%"
+              , style "display" "flex"
+              ]
+              [ codeView model
+              , drawView model
+              ]
         ]
