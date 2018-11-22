@@ -15,13 +15,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 
 import Browser
-import Html exposing (Html, a, button, div, h1, option, select, text, textarea)
+import Html exposing (Html, a, br, button, div, h1, option, select, text, textarea)
 import Html.Attributes exposing (style, href)
 import Html.Events exposing (onClick, onInput)
 import Set
 import Svg exposing (Svg, svg)
 import Svg.Attributes as Svg
-import Parser exposing (Parser, (|.), (|=), spaces)
+import Parser exposing (Parser, (|.), (|=), spaces, Problem(..))
 
 -- symbol : Parser Char
 -- symbol = Parser.oneOf (String.toList "!#$%&|*+-/:<=>?@^_~")
@@ -33,7 +33,8 @@ type LispVal
     = Atom String
     | List (List LispVal)
     | DottedList (List LispVal) LispVal
-    | Number Int
+    | Int Int
+    | Float Float
     | String String
     | Bool Bool
 
@@ -53,34 +54,85 @@ parseAtom =
         , reserved = Set.empty
         }
 
-parseList : Parser LispVal
+parseNumber : Parser LispVal
+parseNumber =
+    Parser.oneOf
+        [ Parser.symbol "."
+            |> Parser.andThen (\_ -> Parser.problem "floating point numbers must start with a digit, like 0.25")
+        , Parser.number
+              { int = Just Int
+              , hex = Just Int
+              , octal = Just Int
+              , binary = Just Int
+              , float = Just Float
+              }
+        ]
+
+parseList : Parser (List LispVal)
 parseList =
     Parser.loop [] listHelp
 
-listHelp : List LispVal -> Parser (Parser.Step (List LispVal) LispVal)
+listHelp : List LispVal -> Parser (Parser.Step (List LispVal) (List LispVal))
 listHelp revValues =
     Parser.oneOf
         [ Parser.succeed (\expr -> Parser.Loop (expr :: revValues))
             |= parseExpr
             |. spaces
         , Parser.succeed ()
-            |> Parser.map (\_ -> Parser.Done (List (List.reverse revValues)))
+            |> Parser.map (\_ -> Parser.Done (List.reverse revValues))
+        ]
+
+parseListOrDotted : List LispVal -> Parser LispVal
+parseListOrDotted list =
+    Parser.oneOf
+        [ Parser.succeed (DottedList list)
+              |. Parser.symbol "."
+              |. spaces
+              |= parseExpr
+              |. spaces
+              |. Parser.symbol ")"
+        , Parser.succeed (List list)
+              |. Parser.symbol ")"
         ]
 
 parseExpr : Parser LispVal
 parseExpr =
     Parser.oneOf
-        [ parseAtom
+        -- Numbers need to be backtrackable because the builtin number parser
+        -- accepts floats like .25 and we want . for dotted lists
+        [ Parser.backtrackable parseNumber
+        , parseAtom
         , Parser.succeed identity
             |. Parser.symbol "("
+            |. spaces
             |= parseList
-            |. Parser.symbol ")"
+            |> Parser.andThen parseListOrDotted
         ]
+
+showErrors : List Parser.DeadEnd -> String
+showErrors errors =
+    let showError e =
+            case e.problem of
+                Expecting str -> "Expected " ++ str
+                ExpectingInt -> "Expected int"
+                ExpectingHex -> "Expected hex"
+                ExpectingOctal -> "Expected octal"
+                ExpectingBinary -> "Expected binary"
+                ExpectingFloat -> "Expected float"
+                ExpectingNumber -> "Expected number"
+                ExpectingVariable -> "Expected variable"
+                ExpectingSymbol sym -> "Expected symbol " ++ sym
+                ExpectingKeyword keyw -> "Expected keyword " ++ keyw
+                ExpectingEnd -> "Expected end"
+                UnexpectedChar -> "Unexpected char"
+                Problem str -> "Problem: " ++ str
+                BadRepeat -> "Bad repeat"
+    in String.join "\n" <| List.map showError errors
 
 readExpr : String -> String
 readExpr input =
     case Parser.run parseExpr input of
-        Err e -> "Error"
+        Err e -> "Error: " ++ showErrors e
         Ok _ -> "Found value"
 
 type alias Model =
@@ -230,6 +282,7 @@ view model =
         , a
             [ href "http://lithekod.se/advent-of-code/" ]
             [ text "Advent of code-tävling" ]
+        , br [] []
         , text model.evalResult
         , div
               [ style "width" "100%"
