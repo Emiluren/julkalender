@@ -61,7 +61,6 @@ listHelp : List LispVal -> Parser (Parser.Step (List LispVal) LispVal)
 listHelp revValues =
     Parser.oneOf
         [ Parser.succeed (\expr -> Parser.Loop (expr :: revValues))
-            |. spaces
             |= parseExpr
             |. spaces
         , Parser.succeed ()
@@ -72,7 +71,10 @@ parseExpr : Parser LispVal
 parseExpr =
     Parser.oneOf
         [ parseAtom
-        , parseList
+        , Parser.succeed identity
+            |. Parser.symbol "("
+            |= parseList
+            |. Parser.symbol ")"
         ]
 
 readExpr : String -> String
@@ -198,8 +200,6 @@ codeView : Model -> Html Msg
 codeView model =
     div
         [ style "width" "50%"
-        --, style "height" "200px"
-        --, style "float" "left"
         , style "flex" "1"
         ]
         [ button [ onClick RunCode ] [ text "Kör" ]
@@ -216,7 +216,6 @@ drawView : Model -> Html Msg
 drawView model =
     div 
         [ style "width" "50%"
-        --, style "float" "left"
         , style "flex" "1"
         ]
         [ drawShapes (evalProgram christmasTree)
@@ -228,11 +227,13 @@ view model =
         []
         [ h1 [] [ text "God jul önskar LiTHe kod!" ]
         , text "Delta gärna i vår "
-        , a [ href "http://lithekod.se/advent-of-code/" ] [ text "Advent of code-tävling" ]
+        , a
+            [ href "http://lithekod.se/advent-of-code/" ]
+            [ text "Advent of code-tävling" ]
         , text model.evalResult
         , div
               [ style "width" "100%"
-              , style "height" "100%"
+              , style "height" "500px"
               , style "display" "flex"
               ]
               [ codeView model
