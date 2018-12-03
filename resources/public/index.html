@@ -3,31 +3,46 @@
   <head>
     <title>God jul från LiTHe kod!</title>
     <meta charset="UTF-8">
-    <link rel="stylesheet" type="text/css" href="style.css">
+    <style>
+      #app { display: flex; height: 500px; }
+      #codeeditor { resize: none; height: 100%; flex: 1; }
+      #drawview { height: 100%; flex: 1; }
+    </style>
+    <script>
+      function runCode() {
+          let code = document.getElementById("codeeditor").value;
+          eval(code);
+      }
+    </script>
   </head>
-  <body>
+  <body onload="runCode()">
     <h2>God jul önskar LiTHe kod!</h2>
+    Koden nedan kan ändras. Klicka på knappen
+    <button onclick="runCode()">Kör</button> eller tryck F5 för att se resultatet.
     Delta gärna i vår <a href="http://lithekod.se/advent-of-code/">Advent of code-tävling</a>.
     <div id="app">
-      <textarea id="codeeditor"></textarea>
+      <textarea id="codeeditor">
+let treeSvg = "\n \
+// Himmel \
+<rect x=\"0\" y=\"0\" width=\"100\" height=\"100\" fill=\"black\"></rect>\n \
+<line x1=\"10\" x2=\"10\" y1=\"10\" y2=\"20\" stroke=\"yellow\"></line>\n \
+<line x1=\"5\" x2=\"15\" y1=\"15\" y2=\"15\" stroke=\"yellow\"></line>\n \
+<line x1=\"80\" x2=\"80\" y1=\"17\" y2=\"27\" stroke=\"yellow\"></line>\n \
+<line x1=\"75\" x2=\"85\" y1=\"22\" y2=\"22\" stroke=\"yellow\"></line>\n \
+\
+// Snö \
+<path d=\"M0 90 C20 85, 40 87, 100 82 V100 H0\" fill=\"white\"></path>\n\n \
+\
+// Gran \
+<polygon points=\"20 80, 40 60, 25 60, 50 30, 75 60, 60 60, 80 80\" fill=\"green\"></polygon>\n \
+<rect x=\"45\" y=\"80\" width=\"10\" height=\"15\" fill=\"brown\"></rect>\n \
+";
+
+let drawView = document.getElementById("drawview");
+drawView.innerHTML = treeSvg;
+      </textarea>
       <svg id="drawview" viewbox="0 0 100 100">
-        <!-- Himmel -->
-        <rect x="0" y="0" width="100" height="100" fill="black" />
-
-        <!-- Stjärnor -->
-        <line x1="10" x2="10" y1="10" y2="20" stroke="yellow" />
-        <line x1="5" x2="15" y1="15" y2="15" stroke="yellow" />
-        <line x1="80" x2="80" y1="17" y2="27" stroke="yellow" />
-        <line x1="75" x2="85" y1="22" y2="22" stroke="yellow" />
-
-        <!-- Snö -->
-        <path d="M0 90 C20 85, 40 87, 100 82 V100 H0" fill="white" />
-
-        <!-- Gran -->
-        <polygon points="20 80, 40 60, 25 60, 50 30, 75 60, 60 60, 80 80" fill="green" />
-        <rect x="45" y="80" width="10" height="15" fill="brown" />
       </svg>
     </div>
-    <script src="prog.js"></script>
   </body>
 </html>
