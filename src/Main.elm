@@ -23,20 +23,18 @@ import Svg exposing (Svg, svg)
 import Svg.Attributes as Svg
 import Parser exposing (Parser, (|.), (|=), spaces, Problem(..))
 
--- symbol : Parser Char
--- symbol = Parser.oneOf (String.toList "!#$%&|*+-/:<=>?@^_~")
-
 legalSymbolsInIdentifiers : List Char
 legalSymbolsInIdentifiers = String.toList "!#$%&|*+-/:<=>?@^_~"
 
 type LispVal
     = Atom String
-    | List (List LispVal)
-    | DottedList (List LispVal) LispVal
+    | Cons LispVal LispVal
+    | Nil
     | Int Int
     | Float Float
     | String String
     | Bool Bool
+    | V2 Vec2
 
 parseAtom : Parser LispVal
 parseAtom =
@@ -82,16 +80,22 @@ listHelp revValues =
             |> Parser.map (\_ -> Parser.Done (List.reverse revValues))
         ]
 
+makeList : List LispVal -> LispVal
+makeList = List.foldr Cons Nil
+
+makeDottedList : List LispVal -> LispVal -> LispVal
+makeDottedList list lastElem = List.foldr Cons lastElem list
+
 parseListOrDotted : List LispVal -> Parser LispVal
 parseListOrDotted list =
     Parser.oneOf
-        [ Parser.succeed (DottedList list)
+        [ Parser.succeed (makeDottedList list)
               |. Parser.symbol "."
               |. spaces
               |= parseExpr
               |. spaces
               |. Parser.symbol ")"
-        , Parser.succeed (List list)
+        , Parser.succeed (makeList list)
               |. Parser.symbol ")"
         ]
 
@@ -108,6 +112,43 @@ parseExpr =
             |= parseList
             |> Parser.andThen parseListOrDotted
         ]
+
+-- Helper function to display cons cells
+showList : LispVal -> String
+showList val =
+    let internal v =
+            case v of
+                Cons x (Cons y ys) ->
+                    showVal x :: " " :: internal (Cons y ys)
+
+                Cons x Nil ->
+                    [ showVal x, ")"]
+
+                Cons x y ->
+                    [ showVal x, " . ", showVal y, ")" ]
+
+                -- Should not happen unless we call this function with something
+                -- that is not a cons cell
+                _ ->
+                    [ ")" ]
+
+    in
+        String.concat <| "(" :: internal val
+
+showVal : LispVal -> String
+showVal val =
+    case val of
+        Atom name -> name
+        Int i -> String.fromInt i
+        Float f -> String.fromFloat f
+        String str -> "\"" ++ str ++ "\""
+        Bool True -> "#t"
+        Bool False -> "#f"
+        Cons (Atom "quote") (Cons x Nil) -> "'" ++ showVal x
+        Cons _ _ -> showList val
+        Nil -> "()"
+        V2 { x, y } ->
+            "(v2 x y)"
 
 showErrors : List Parser.DeadEnd -> String
 showErrors errors =
@@ -129,30 +170,43 @@ showErrors errors =
                 BadRepeat -> "Bad repeat"
     in String.join "\n" <| List.map showError errors
 
-readExpr : String -> String
+readExpr : String -> Result String String
 readExpr input =
     case Parser.run parseExpr input of
-        Err e -> "Error: " ++ showErrors e
-        Ok _ -> "Found value"
+        Err e -> Err ("Fel: " ++ showErrors e)
+        Ok val -> Ok (showVal val)
+
+-- Default program to show at start. Should draw a christmas tree.
+christmasProgram : String
+christmasProgram =
+    "(triangle (v2 10 150) (v2 50 110) (v2 90 150))\n(triangle (v2 20 120) (v2 50 90) (v2 80 120))"
+
+eval : LispVal -> Result String (LispVal, List Shape)
+eval v =
+    case v of
+        Cons (Atom "quote") (Cons val Nil) ->
+            Ok (val, [])
+        _ -> Err ("Okänt uttryck " ++ showVal v)
 
 type alias Model =
-    { program : Expression
-    , code : String
+    { code : String
     , evalResult : String
+    , error : String
     }
 
+main : Program () Model Msg
 main =
     Browser.sandbox
         { init =
-              { program = christmasTree
-              , code = "(triangle (10 . 150) (50 . 110) (90 . 150))\n(triangle (20 . 120) (50 . 90) (80 . 120))"
+              { code = christmasProgram
+              , error = ""
               , evalResult = ""
               }
         , update = update
         , view = view
         }
 
-type Msg = ChangeProgram Expression | RunCode | NewCode String
+type Msg = RunCode | NewCode String
 
 type alias Vec2 = { x : Float, y : Float }
 
@@ -170,23 +224,6 @@ colorString color =
             "green"
         Red ->
             "red"
-
--- stringColor : String -> Color
--- stringColor 
-
--- TODO: maybe add interactivity
-type Expression = Combine (List Expression) | Draw Shape Color
-
--- Default program to show at start. Should draw a christmas tree.
-christmasTree : Expression
-christmasTree = Combine
-    [ Draw
-          (Triangle { x = 10, y = 150 } { x = 50, y = 110 } { x = 90, y = 150 })
-          Green
-    , Draw
-          (Triangle { x = 20, y = 120 } { x = 50, y = 90 } { x = 80, y = 120 })
-          Green
-    ]
 
 shapeToSvg : (Shape, Color) -> Svg msg
 shapeToSvg (shape, color) =
@@ -212,41 +249,17 @@ drawShapes shapes =
 update : Msg -> Model -> Model
 update msg model =
     case msg of
-        ChangeProgram newProgram ->
-            { model | program = newProgram }
         NewCode code ->
             { model | code = code }
         RunCode ->
-            { model | evalResult = readExpr model.code }
-
--- Evaluate a program to
-evalProgram : Expression -> List (Shape, Color)
-evalProgram expression =
-    case expression of
-        Draw shape color ->
-            [(shape, color)]
-        Combine expressions ->
-            List.concatMap evalProgram expressions
-
-makeOption : Color -> Html Msg
-makeOption c = option [] [ text (colorString c) ]
-
-viewProgramEditor : Expression -> Html Msg
-viewProgramEditor expr =
-    case expr of
-        Draw shape color ->
-            div
-                []
-                [ text "Draw"
-                , select [] [ option [] [ text "Triangle" ] ]
-                , select [] (List.map makeOption allColors)
-                ]
-        Combine expressions ->
-            div [] <| List.concat
-                [ [ text "Combine" ]
-                , List.map viewProgramEditor expressions
-                , [ button [] [ text "+" ] ]
-                ]
+            case readExpr model.code of
+                Ok res -> 
+                    { model
+                        | evalResult = res
+                        , error = ""
+                    }
+                Err e ->
+                    { model | error = e }
 
 codeView : Model -> Html Msg
 codeView model =
@@ -270,7 +283,7 @@ drawView model =
         [ style "width" "50%"
         , style "flex" "1"
         ]
-        [ drawShapes (evalProgram christmasTree)
+        [ --drawShapes (evalProgram christmasTree)
         ]
 
 view : Model -> Html Msg
@@ -283,7 +296,7 @@ view model =
             [ href "http://lithekod.se/advent-of-code/" ]
             [ text "Advent of code-tävling" ]
         , br [] []
-        , text model.evalResult
+        , text model.error
         , div
               [ style "width" "100%"
               , style "height" "500px"
@@ -291,5 +304,14 @@ view model =
               ]
               [ codeView model
               , drawView model
+              ]
+        , div
+              [ style "flex" "1"
+              , style "width" "100%"
+              , style "margin-top" "50px"
+              ]
+              [ text "Log:"
+              , br [] []
+              , text model.evalResult
               ]
         ]
